@@ -128,3 +128,8 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+
+## redis
+redis-7.2.4
+redis-7.2.4.tar.gz
