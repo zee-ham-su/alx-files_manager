@@ -1,18 +1,39 @@
 import { v4 as uuidv4 } from 'uuid';
+import { ObjectID } from 'mongodb';
 import fs from 'fs';
 import path from 'path';
+import Queue from 'bull/lib/queue';
 import dbClient from '../utils/db';
 import redisClient from '../utils/redis';
 
+const fileQueue = new Queue('fileQueue');
+
 class FilesController {
+  static async getUser(request) {
+    const token = request.header('X-Token');
+    const key = `auth_${token}`;
+    const userId = await redisClient.get(key);
+    if (userId) {
+      const users = dbClient.db.collection('users');
+      const idObject = new ObjectID(userId);
+      const user = await users.findOne({ _id: idObject });
+      if (!user) {
+        return null;
+      }
+      return user;
+    }
+    return null;
+  }
+
   static async postUpload(req, res) {
+    const user = await FilesController.getUser(req);
     const { 'x-token': token } = req.headers;
     if (!token) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
     const userId = await redisClient.get(`auth_${token}`);
-    if (!userId) {
+    if (!userId || userId !== user._id.toString()) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
@@ -25,7 +46,7 @@ class FilesController {
       return res.status(400).json({ error: 'Missing name' });
     }
 
-    if (!type || !['folder', 'file'].includes(type)) {
+    if (type !== 'folder' && !['file', 'image'].includes(type)) {
       return res.status(400).json({ error: 'Missing type' });
     }
 
@@ -54,7 +75,6 @@ class FilesController {
     if (type !== 'folder') {
       const folderPath = process.env.FOLDER_PATH || '/tmp/files_manager';
 
-      // Check if the directory exists, if not, create it
       if (!fs.existsSync(folderPath)) {
         fs.mkdirSync(folderPath, { recursive: true });
       }
@@ -63,6 +83,15 @@ class FilesController {
 
       fs.writeFileSync(filePath, data, 'base64');
       newFileDoc.localPath = filePath;
+
+      if (type === 'image') {
+        fileQueue.add(
+          {
+            userId: user._id,
+            fileId: newFileDoc.insertedId,
+          },
+        );
+      }
     }
 
     try {
@@ -73,6 +102,51 @@ class FilesController {
       return res.status(500).json({ error: 'Internal Server Error' });
     }
   }
-}
 
+  static async getShow(req, res) {
+    const user = await FilesController.getUser(req);
+    if (!user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const fileId = req.params.id;
+    const files = dbClient.db.collection('files');
+    const idObject = new ObjectID(fileId);
+    const file = await files.findOne({ _id: idObject, userId: user._id });
+    if (!file) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    return res.status(200).json(file);
+  }
+
+  static async getIndex(req, res) {
+    const user = await FilesController.getUser(req);
+    if (!user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const { parentId = '0', page = 0 } = req.query;
+
+    const pageInt = page || 0;
+    const files = dbClient.db.collection('files');
+    let query;
+    if (parentId === '0') {
+      query = { userId: user._id, parentId };
+    } else {
+      try {
+        const parentIdObject = new ObjectID(parentId);
+        query = { userId: user._id, parentId: parentIdObject };
+      } catch (error) {
+        return res.status(500).json({ error: 'Internal Server Error' });
+      }
+    }
+
+    return new Promise((resolve, reject) => {
+      files.find(query).limit(20).skip(pageInt * 20).toArray((err, result) => {
+        if (err) {
+          return reject(new Error('Internal Server Error'));
+        }
+        resolve(res.status(200).json(result));
+      });
+    });
+  }
+}
 module.exports = FilesController;
