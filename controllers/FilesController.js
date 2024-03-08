@@ -140,13 +140,20 @@ class FilesController {
     }
 
     return new Promise((resolve, reject) => {
-      files.find(query).limit(20).skip(pageInt * 20).toArray((err, result) => {
+      files.find(query).limit(20).skip(pageInt * 20).toArray((err, newFileDoc) => {
         if (err) {
-          return reject(new Error('Internal Server Error'));
+          reject(new Error('Internal Server Error'));
+          return; // Add return statement to exit the function
         }
-        resolve(res.status(200).json(result));
+        resolve(newFileDoc); // Resolve with the retrieved data
       });
-    });
+    })
+      .then((newFileDoc) => {
+        res.status(200).json(newFileDoc); // Return the response outside of the promise
+      })
+      .catch((error) => {
+        res.status(500).json({ error: error.message }); // Handle errors
+      });
   }
 }
 module.exports = FilesController;
