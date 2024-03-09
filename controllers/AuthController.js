@@ -20,7 +20,7 @@ class AuthController {
     }
 
     const token = uuid4();
-    await redisClient.set(`auth_${token}`, user._id.toString(), 86400);
+    await redisClient.set(`auth_${token}`, user._id.toString(), 'EX', 86400);
 
     return res.status(200).json({ token });
   }
