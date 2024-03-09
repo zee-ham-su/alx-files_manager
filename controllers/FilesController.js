@@ -1,12 +1,6 @@
-import { v4 as uuidv4 } from 'uuid';
 import { ObjectID } from 'mongodb';
-import fs from 'fs';
-import path from 'path';
-import Queue from 'bull/lib/queue';
 import dbClient from '../utils/db';
 import redisClient from '../utils/redis';
-
-const fileQueue = new Queue('fileQueue');
 
 class FilesController {
   static async getUser(request) {
@@ -55,7 +49,7 @@ class FilesController {
     }
 
     if (parentId !== '0') {
-      const parentFile = await dbClient.files.find({ id: parentId });
+      const parentFile = await dbClient.files.findOne({ _id: new ObjectID(parentId) });
       if (!parentFile || parentFile.type !== 'folder') {
         return res.status(400).json({ error: 'Parent not found' });
       }
@@ -72,31 +66,29 @@ class FilesController {
       isPublic,
     };
 
-    if (type !== 'folder') {
-      const folderPath = process.env.FOLDER_PATH || '/tmp/files_manager';
-
-      if (!fs.existsSync(folderPath)) {
-        fs.mkdirSync(folderPath, { recursive: true });
-      }
-
-      const filePath = path.join(folderPath, uuidv4());
-
-      fs.writeFileSync(filePath, data, 'base64');
-      newFileDoc.localPath = filePath;
-
-      if (type === 'image') {
-        fileQueue.add(
-          {
-            userId: user._id,
-            fileId: newFileDoc.insertedId,
-          },
-        );
-      }
-    }
-
     try {
       const result = await dbClient.db.collection('files').insertOne(newFileDoc);
-      const newFile = { ...newFileDoc, _id: result.insertedId };
+      const insertedId = result.insertedId.toHexString();
+
+      if (type === 'folder') {
+        const newFolder = {
+          id: insertedId,
+          userId: newFileDoc.userId,
+          name: newFileDoc.name,
+          type: newFileDoc.type,
+          isPublic: newFileDoc.isPublic,
+          parentId: newFileDoc.parentId,
+        };
+        return res.status(201).json(newFolder);
+      }
+      const newFile = {
+        userId: newFileDoc.userId,
+        name: newFileDoc.name,
+        type: newFileDoc.type,
+        isPublic: newFileDoc.isPublic,
+        parentId: newFileDoc.parentId,
+        _id: insertedId,
+      };
       return res.status(201).json(newFile);
     } catch (error) {
       return res.status(500).json({ error: 'Internal Server Error' });
