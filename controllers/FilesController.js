@@ -155,5 +155,37 @@ class FilesController {
         res.status(500).json({ error: error.message }); // Handle errors
       });
   }
+
+  static async putPublish(req, res) {
+    const user = await FilesController.getUser(req);
+    if (!user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const fileId = req.params.id;
+    const files = dbClient.db.collection('files');
+    const idObject = new ObjectID(fileId);
+    const file = await files.findOne({ _id: idObject, userId: user._id });
+    if (!file) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    await files.updateOne({ _id: idObject }, { $set: { isPublic: true } });
+    return res.status(200).json({ ...file, isPublic: true });
+  }
+
+  static async putUnpublish(req, res) {
+    const user = await FilesController.getUser(req);
+    if (!user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const fileId = req.params.id;
+    const files = dbClient.db.collection('files');
+    const idObject = new ObjectID(fileId);
+    const file = await files.findOne({ _id: idObject, userId: user._id });
+    if (!file) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    await files.updateOne({ _id: idObject }, { $set: { isPublic: false } });
+    return res.status(200).json({ ...file, isPublic: false });
+  }
 }
 module.exports = FilesController;
