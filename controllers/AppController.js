@@ -13,15 +13,10 @@ class AppController {
   }
 
   static async getStats(req, res) {
-    const nUsers = await dbClient.client
-      .db(dbClient.dbName)
-      .collection('users')
-      .countDocuments();
-    const nFiles = await dbClient.client
-      .db(dbClient.dbName)
-      .collection('files')
-      .countDocuments();
-    return res.status(200).json({ users: nUsers, files: nFiles });
+    const users = await dbClient.nbUsers();
+    const files = await dbClient.nbFiles();
+
+    return res.status(200).json({ users, files });
   }
 }
 
