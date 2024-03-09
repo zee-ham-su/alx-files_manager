@@ -117,17 +117,35 @@ class FilesController {
     }
     const { parentId = '0', page = 0 } = req.query;
 
-    const pageInt = parseInt(page, 10);
-
-    const query = { userId: user._id, parentId };
+    const pageInt = page || 0;
+    const files = dbClient.db.collection('files');
+    let query;
     if (parentId === '0') {
-      query.parentId = new ObjectID(parentId);
+      query = { userId: user._id, parentId };
+    } else {
+      try {
+        const parentIdObject = new ObjectID(parentId);
+        query = { userId: user._id, parentId: parentIdObject };
+      } catch (error) {
+        return res.status(500).json({ error: 'Internal Server Error' });
+      }
     }
 
-    const files = dbClient.db.collection('files');
-    const cursor = files.find(query).limit(20).skip(pageInt * 20);
-    const filesArray = await cursor.toArray();
-    return res.status(200).json(filesArray);
+    return new Promise((resolve, reject) => {
+      files.find(query).limit(20).skip(pageInt * 20).toArray((err, newFileDoc) => {
+        if (err) {
+          reject(new Error('Internal Server Error'));
+          return;
+        }
+        resolve(newFileDoc);
+      });
+    })
+      .then((newFileDoc) => {
+        res.status(200).json(newFileDoc);
+      })
+      .catch((error) => {
+        res.status(500).json({ error: error.message });
+      });
   }
 
   static async putPublish(req, res) {
@@ -162,5 +180,4 @@ class FilesController {
     return res.status(200).json({ ...file, isPublic: false });
   }
 }
-
 module.exports = FilesController;
