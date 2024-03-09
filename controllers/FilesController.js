@@ -135,16 +135,16 @@ class FilesController {
       files.find(query).limit(20).skip(pageInt * 20).toArray((err, newFileDoc) => {
         if (err) {
           reject(new Error('Internal Server Error'));
-          return; // Add return statement to exit the function
+          return;
         }
-        resolve(newFileDoc); // Resolve with the retrieved data
+        resolve(newFileDoc);
       });
     })
       .then((newFileDoc) => {
-        res.status(200).json(newFileDoc); // Return the response outside of the promise
+        res.status(200).json(newFileDoc);
       })
       .catch((error) => {
-        res.status(500).json({ error: error.message }); // Handle errors
+        res.status(500).json({ error: error.message });
       });
   }
 
