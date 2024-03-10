@@ -1,9 +1,12 @@
 import { ObjectID } from 'mongodb';
+import Bull from 'bull';
 import dbClient from '../utils/db';
 import redisClient from '../utils/redis';
 
 const fs = require('fs');
 const mime = require('mime-types');
+
+const fileQueue = new Bull('fileQueue');
 
 class FilesController {
   static async getUser(request) {
@@ -71,6 +74,10 @@ class FilesController {
     try {
       const result = await dbClient.db.collection('files').insertOne(newFileDoc);
       const insertedId = result.insertedId.toHexString();
+
+      if (type === 'image') {
+        fileQueue.add({ fileId: insertedId, userId });
+      }
 
       if (type === 'folder') {
         const newFolder = {
@@ -185,57 +192,34 @@ class FilesController {
   static async getFile(req, res) {
     const { id } = req.params;
     const idObject = new ObjectID(id);
-    const files = dbClient.db.collection('files');
-    files.findOne({ _id: idObject }, async (err, file) => {
-      if (!file) {
-        return res.status(404).json({ error: 'Not found' });
-      }
-      console.log(file.localPath);
-      if (file.isPublic) {
-        if (file.type === 'folder') {
-          return res.status(400).json({ error: "A folder doesn't have content" });
-        }
-        try {
-          let fileName = file.localPath;
-          const size = req.param('size');
-          if (size) {
-            fileName = `${file.localPath}_${size}`;
-          }
-          const data = await fs.readFile(fileName);
-          const contentType = mime.contentType(file.name);
-          return res.header('Content-Type', contentType).status(200).send(data);
-        } catch (error) {
-          console.log(error);
-          return res.status(404).json({ error: 'Not found' });
-        }
-      } else {
-        const user = await FilesController.getUser(req);
-        if (!user) {
-          return res.status(404).json({ error: 'Not found' });
-        }
-        if (file.userId.toString() === user._id.toString()) {
-          if (file.type === 'folder') {
-            return res.status(400).json({ error: "A folder doesn't have content" });
-          }
-          try {
-            let fileName = file.localPath;
-            const size = req.param('size');
-            if (size) {
-              fileName = `${file.localPath}_${size}`;
-            }
-            const contentType = mime.contentType(file.name);
-            return res.header('Content-Type', contentType).status(200).sendFile(fileName);
-          } catch (error) {
-            console.log(error);
-            return res.status(404).json({ error: 'Not found' });
-          }
-        } else {
-          console.log(`Wrong user: file.userId=${file.userId}; userId=${user._id}`);
-          return res.status(404).json({ error: 'Not found' });
-        }
-      }
-    });
+    const file = await dbClient.db.collection('files').findOne({ _id: idObject });
+
+    if (!file) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+
+    if (file.type === 'folder') {
+      return res.status(400).json({ error: "A folder doesn't have content" });
+    }
+
+    let fileName = file.localPath;
+    const { size } = req.query;
+
+    if (size) {
+      fileName = `${file.localPath}_${size}`;
+    }
+
+    try {
+      await fs.promises.access(fileName, fs.constants.F_OK);
+    } catch (error) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+
+    const contentType = mime.contentType(file.name);
+    return res.header('Content-Type', contentType).status(200).sendFile(fileName);
   }
 }
+
+module.exports = FilesController;
 
 module.exports = FilesController;
